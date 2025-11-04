@@ -62,18 +62,23 @@ docker run -p 5555:5555 -e SUBFOLDER=/api vin-decoder
 - 자동으로 ProxyFix 미들웨어가 적용됩니다
 - 모든 API가 지정된 서브폴더 경로에 마운트됩니다
 - X-Forwarded-* 헤더를 올바르게 처리합니다
+- `/health` 엔드포인트는 SUBFOLDER 외부에서도 접근 가능 (Kubernetes/Knative readinessProbe용)
 
 ## API 엔드포인트
 
 ### SUBFOLDER 미설정 시
 
-- **Swagger UI**: `http://localhost:5555/doc`
-- **VIN Decoder**: `GET http://localhost:5555/APIs/vin-decoder?VIN={vin_number}`
+- **Root**: `http://localhost:5000/` → `/doc`로 리다이렉트
+- **Health Check**: `http://localhost:5000/health`
+- **Swagger UI**: `http://localhost:5000/doc`
+- **VIN Decoder**: `GET http://localhost:5000/APIs/vin-decoder?VIN={vin_number}`
 
 ### SUBFOLDER=/api 설정 시
 
-- **Swagger UI**: `http://localhost:5555/api/doc`
-- **VIN Decoder**: `GET http://localhost:5555/api/APIs/vin-decoder?VIN={vin_number}`
+- **Root**: `http://localhost:5000/` → `/api/doc`로 리다이렉트
+- **Health Check**: `http://localhost:5000/health` (SUBFOLDER 외부에서도 접근 가능)
+- **Swagger UI**: `http://localhost:5000/api/doc`
+- **VIN Decoder**: `GET http://localhost:5000/api/APIs/vin-decoder?VIN={vin_number}`
 
 ## 사용 예시
 
@@ -132,17 +137,41 @@ SUBFOLDER=/api python app.py
 docker run -p 5555:5555 -e SUBFOLDER=/api vin-decoder
 ```
 
+## Knative/Kubernetes 배포
+
+### Knative Service YAML
+
+`knative-service.yaml` 파일을 참고하여 배포하세요.
+
+주요 설정:
+- `SUBFOLDER` 환경 변수: 프록시 경로 설정
+- `readinessProbe`: `/health` 엔드포인트 사용
+- `livenessProbe`: `/health` 엔드포인트 사용
+
+```bash
+kubectl apply -f knative-service.yaml
+```
+
+### 주의사항
+
+Knative에서 긴 프록시 경로를 사용할 때:
+- SUBFOLDER는 끝에 슬래시(`/`)를 포함하지 마세요
+- 예: `/api/proxy/apps/kadap-saas-dev/marketplace-299` (올바름)
+- 예: `/api/proxy/apps/kadap-saas-dev/marketplace-299/` (틀림)
+
 ## 프로젝트 구조
 
 ```
 vin_decoder/
-├── app.py              # Flask 애플리케이션 메인
-├── decoder.py          # VIN 디코딩 로직
-├── flask_vin.py        # API 엔드포인트 정의
-├── requirements.txt    # Python 의존성
-├── Dockerfile          # Docker 이미지 빌드 파일
-├── .dockerignore       # Docker 빌드 제외 파일
-└── README.md           # 프로젝트 문서
+├── app.py                  # Flask 애플리케이션 메인
+├── decoder.py              # VIN 디코딩 로직
+├── flask_vin.py            # API 엔드포인트 정의
+├── requirements.txt        # Python 의존성
+├── Dockerfile              # Docker 이미지 빌드 파일
+├── .dockerignore           # Docker 빌드 제외 파일
+├── .gitignore              # Git 제외 파일
+├── knative-service.yaml    # Knative Service 배포 YAML
+└── README.md               # 프로젝트 문서
 ```
 
 ## 개발 내용
