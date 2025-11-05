@@ -56,14 +56,9 @@ def health():
 # 루트 경로(/)를 /doc으로 리다이렉트
 @app.route('/')
 def index():
-    if SUBFOLDER:
-        # SUBFOLDER가 설정된 경우 절대 경로로 리다이렉트
-        logger.info(f"Root path accessed with SUBFOLDER, redirecting to {SUBFOLDER}/doc")
-        return redirect(f'{SUBFOLDER}/doc', code=302)
-    else:
-        # SUBFOLDER가 없는 경우 상대 경로로 리다이렉트
-        logger.info(f"Root path accessed, redirecting to /doc")
-        return redirect('/doc')
+    # 상대 경로로 리다이렉트 (슬래시 없이 'doc'만)
+    logger.info(f"Root path accessed, redirecting to doc")
+    return redirect('doc', code=302)
 
 # SUBFOLDER가 설정되어 있으면 DispatcherMiddleware로 서브폴더에 마운트
 if SUBFOLDER:
@@ -108,9 +103,37 @@ if SUBFOLDER:
             )
         return response(environ, start_response)
     
-    # SUBFOLDER 경로에 Flask 앱 마운트 (슬래시 없는 경로만)
-    # SUBFOLDER/ 경로는 handle_root에서 처리하여 무한 리다이렉트 방지
-    mounts = {SUBFOLDER: app.wsgi_app}
+    # SUBFOLDER 경로에 Flask 앱 마운트
+    # 슬래시 있는/없는 경로를 모두 마운트하되, 루트(/)는 리다이렉트 처리
+    class SubfolderApp:
+        """SUBFOLDER 루트 경로를 리다이렉트 처리하는 래퍼"""
+        def __init__(self, app, subfolder):
+            self.app = app
+            self.subfolder = subfolder
+        
+        def __call__(self, environ, start_response):
+            path = environ.get('PATH_INFO', '/')
+            logger.info(f"SubfolderApp called with path: '{path}'")
+            
+            # SUBFOLDER의 루트(/ 또는 빈 문자열) 접근 시에만 상대 경로로 리다이렉트
+            if path == '/' or path == '':
+                # 상대 경로로 리다이렉트 (현재 경로에서 doc으로)
+                logger.info(f"Redirecting to doc")
+                response = Response(
+                    status=302,
+                    headers=[('Location', 'doc')]
+                )
+                return response(environ, start_response)
+            # 그 외에는 Flask 앱으로 전달
+            logger.info(f"Passing to Flask app")
+            return self.app(environ, start_response)
+    
+    wrapped_app = SubfolderApp(app.wsgi_app, SUBFOLDER)
+    # 슬래시 있는/없는 경로 모두 마운트
+    mounts = {
+        SUBFOLDER: wrapped_app,
+        f'{SUBFOLDER}/': wrapped_app
+    }
     
     logger.info(f"DispatcherMiddleware mounts: {list(mounts.keys())}")
     app.wsgi_app = DispatcherMiddleware(handle_root, mounts)
